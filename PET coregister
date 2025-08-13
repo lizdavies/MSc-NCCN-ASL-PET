@@ -1,4 +1,4 @@
-% SUMMARY
+% SUMMARY - MATLAB
 % Coregister each subject’s PET to their T1 using SPM (estimate+write), then reslice PET.
 % Needs SPM
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
