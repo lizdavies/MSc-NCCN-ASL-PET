@@ -1,0 +1,166 @@
+% SUMMARY
+%   Test whether the SUVR–ASL (CBF/ATT) relationship varies with vascular risk (QRISK) per region.
+%   Separate code as it has to read in from another table and i did not want to edit my old code and do it wrong
+% 
+%   ID, Region, mean_SUVR, Perfusion_Median, Arrival_Median, Age
+%   Demo excel --> ID, QRISK_mean_BP
+%   Joins QRISK by ID, centres QRISK, and fits mean_SUVR ~ metric * QRISK_c for each Region × {CBF, ATT}; 
+%   Derives simple slopes at low/high QRISK and model stats.
+%    Excel with per-region coefficients, 95% CIs, p-values, simple slopes (±1 SD QRISK), Adj_R2, DoF.
+
+
+clear all;
+close all;
+clc;
+
+basedir = 'D:\Yasmin_Liz\Needed';
+infile  = fullfile(basedir, 'averaged_by_region.xlsx');
+demo_file = fullfile(basedir, 'Demographics.xlsx');
+outfile = fullfile(basedir, 'Q2regression_QRISK_interaction_age.xlsx');
+
+% -------------------------
+% Load data and merge QRISK
+% -------------------------
+data = readtable(infile, 'ReadVariableNames', true, 'VariableNamingRule','preserve');
+demo = readtable(demo_file, 'ReadVariableNames', true, 'VariableNamingRule','preserve');
+
+% --- Pad IDs with leading zeros ---
+data.ID = compose("%03s", string(strtrim(string(data.ID))));
+demo.ID = compose("%03s", string(strtrim(string(demo.ID))));
+
+% --- Keep only needed demography columns ---
+demo_keep = demo(:, {'ID','QRISK_mean_BP'});
+
+% --- Left-join to bring QRISK into main table ---
+data = outerjoin(data, demo_keep, 'Keys','ID', 'MergeKeys',true, 'Type','left');
+
+% --- Ensure numeric ---
+data.QRISK_mean_BP = double(data.QRISK_mean_BP);
+data.Age = double(data.Age);
+data.Voxel_Count = double(data.Voxel_Count);
+
+% --- Model vars ---
+regions      = unique(data.Region);
+metrics      = {'Perfusion_Median','Arrival_Median'};
+metricLabels = {'CBF','ATT'};
+
+results = struct('Region',{},'Metric',{}, ...
+    'Beta_Metric_atMeanQRISK',{},'CI_Metric_L',{},'CI_Metric_U',{},'p_Metric',{}, ...
+    'Beta_Interaction',{},'p_Interaction',{}, ...
+    'Beta_Metric_atLowQRISK',{},'CI_Low_L',{},'CI_Low_U',{},'p_Low',{}, ...
+    'Beta_Metric_atHighQRISK',{},'CI_High_L',{},'CI_High_U',{},'p_High',{}, ...
+    'Adj_R2',{},'DoF',{});
+
+for m = 1:numel(metrics)
+    metric = metrics{m};
+    label  = metricLabels{m};
+
+    for r = 1:numel(regions)
+        region = regions{r};
+        sub = data(strcmp(data.Region, region), :);
+
+% --- Keep only rows with all required fields ---
+        sub = rmmissing(sub(:, {'mean_SUVR', metric, 'QRISK_mean_BP', 'Age', 'Voxel_Count'}));
+        if height(sub) < 8, continue; end  % too few points
+
+% --- Center Qrisk so metric main effect = slope at mean Qrisk ---
+        q_mean = mean(sub.QRISK_mean_BP, 'omitnan');
+        q_std  = std(sub.QRISK_mean_BP,  'omitnan');
+        sub.QRISK_c = sub.QRISK_mean_BP - q_mean;   % centered QRISK
+
+        % Fit interaction model with covariates
+        form = sprintf('mean_SUVR ~ %s * QRISK_c', metric);
+        mdl  = fitlm(sub, form);
+
+        coefTbl = mdl.Coefficients;
+        covB    = mdl.CoefficientCovariance;
+        df      = mdl.DFE;
+
+        % Row indices for metric and interaction
+        iMetric = find(strcmp(coefTbl.Properties.RowNames, metric));
+        iInter  = find(strcmp(coefTbl.Properties.RowNames, sprintf('%s:QRISK_c', metric)));
+
+        if isempty(iMetric)
+            continue; % no metric term found (shouldn't happen)
+        end
+
+        % Metric effect at mean QRISK (because QRISK_c = 0 at mean)
+        beta_metric = coefTbl.Estimate(iMetric);
+        p_metric    = coefTbl.pValue(iMetric);
+        CIall       = coefCI(mdl);
+        CI_metric   = CIall(iMetric, :);
+
+        % Interaction term (change in slope per 1 unit QRISK)
+        if ~isempty(iInter)
+            beta_int = coefTbl.Estimate(iInter);
+            p_int    = coefTbl.pValue(iInter);
+        else
+            beta_int = NaN; p_int = NaN;
+        end
+
+        % Simple slopes at low and high QRISK (±1 SD from mean)
+        % slope(q) = beta_metric + beta_int * q
+        % Var(slope) = Var(beta_metric) + q^2 Var(beta_int) + 2q Cov(beta_metric,beta_int)
+        q_low  = -q_std;  % mean - 1 SD (because centered)
+        q_high =  q_std;  % mean + 1 SD
+
+        % Low QRISK slope
+        beta_low = beta_metric + beta_int * q_low;
+        var_low  = covB(iMetric,iMetric) + (q_low^2)*covB(iInter,iInter) + 2*q_low*covB(iMetric,iInter);
+        se_low   = sqrt(max(var_low, 0)); % guard
+        tcrit    = tinv(0.975, df);
+        CI_low   = [beta_low - tcrit*se_low, beta_low + tcrit*se_low];
+
+        % p-value for H0: slope(q_low) = 0
+        % z/t for linear combination c'beta where c has 1s for metric and q_low for interaction
+        c_low = zeros(1, height(coefTbl));
+        c_low(iMetric) = 1;
+        if ~isempty(iInter), c_low(iInter) = q_low; end
+        F_low = coefTest(mdl, c_low);
+        p_low = fcdf(F_low, 1, df, 'upper');
+
+        % High QRISK slope
+        beta_high = beta_metric + beta_int * q_high;
+        var_high  = covB(iMetric,iMetric) + (q_high^2)*covB(iInter,iInter) + 2*q_high*covB(iMetric,iInter);
+        se_high   = sqrt(max(var_high, 0));
+        CI_high   = [beta_high - tcrit*se_high, beta_high + tcrit*se_high];
+
+        c_high = zeros(1, height(coefTbl));
+        c_high(iMetric) = 1;
+        if ~isempty(iInter), c_high(iInter) = q_high; end
+        F_high = coefTest(mdl, c_high);
+        p_high = fcdf(F_high, 1, df, 'upper');
+
+        % Store
+        results(end+1) = struct( ...
+            'Region', string(region), ...
+            'Metric', string(label), ...
+            'Beta_Metric_atMeanQRISK', beta_metric, ...
+            'CI_Metric_L', CI_metric(1), ...
+            'CI_Metric_U', CI_metric(2), ...
+            'p_Metric', p_metric, ...
+            'Beta_Interaction', beta_int, ...
+            'p_Interaction', p_int, ...
+            'Beta_Metric_atLowQRISK',  beta_low, ...
+            'CI_Low_L', CI_low(1), ...
+            'CI_Low_U', CI_low(2), ...
+            'p_Low', p_low, ...
+            'Beta_Metric_atHighQRISK', beta_high, ...
+            'CI_High_L', CI_high(1), ...
+            'CI_High_U', CI_high(2), ...
+            'p_High', p_high, ...
+            'Adj_R2', mdl.Rsquared.Adjusted, ...
+            'DoF', df ...
+        );
+    end
+end
+
+% Export
+if isempty(results)
+    warning('No results produced. Check data or variable names.');
+else
+    T = struct2table(results);
+    T = sortrows(T, {'Region','Metric'});
+    writetable(T, outfile);
+    fprintf('Saved: %s\n', outfile);
+end
