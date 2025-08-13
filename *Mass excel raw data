@@ -1,4 +1,4 @@
-% SUMMARY
+% SUMMARY - MATLAB
 %   Extract ROI-wise PET/ASL metrics using a FreeSurfer atlas, compute cerebellum-normalised
 %   SUVRs, and export both per-subject NIfTI summary maps and per-ROI Excel sheets.
 %
