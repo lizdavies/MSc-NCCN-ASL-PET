@@ -1,0 +1,83 @@
+% SUMMARY
+% Test regional associations between PET SUVR and ASL metrics (CBF/ATT) while adjusting for QRISK.
+% 
+% Adapted from Q2 Regression Table
+%
+% ID, Region, mean_SUVR, Perfusion_Median [CBF], Arrival_Median [ATT])
+% Demo excel ID, QRISK_mean_BP
+% Joins QRISK by ID, then for each Region × {CBF, ATT} fits
+%   mean_SUVR ~ metric + QRISK_mean_BP and extracts slope (β) for the metric, 95% CI, p, Adj_R², DoF.
+% 
+% Excel with Region, Metric, Beta, CI_Lower, CI_Upper, pValue, Adjusted_R2, DoF.
+%
+
+
+clear all;
+close all;
+clc;
+
+basedir = 'D:\Yasmin_Liz\Needed'
+% --- Load data ---
+datafile = fullfile(basedir, 'averaged_by_region.xlsx')
+data = readtable('averaged_by_region.xlsx');
+demo_file = fullfile(basedir, 'Demographics.xlsx');
+
+data = readtable(datafile, 'ReadVariableNames', true, 'VariableNamingRule','preserve');
+demo = readtable(demo_file, 'ReadVariableNames', true, 'VariableNamingRule','preserve');
+
+% --- Convert IDs to string ---
+data.ID = compose("%03s", string(strtrim(string(data.ID))));
+demo.ID = compose("%03s", string(strtrim(string(demo.ID))));
+
+% --- Join demographics into main data table ---
+demo_keep = demo(:, {'ID','QRISK_mean_BP'}); % keep only relevant columns
+data = outerjoin(data, demo_keep, 'Keys','ID', 'MergeKeys',true, 'Type','left');
+
+regions = unique(data.Region);
+metrics = {'Perfusion_Median', 'Arrival_Median'};
+metricLabels = {'CBF', 'ATT'};
+
+% --- Preallocate output ---
+results = struct('Region', {}, 'Metric', {}, 'Beta', {}, 'CI_Lower', {}, 'CI_Upper', {}, 'pValue', {}, 'Adjusted_R2', {}, 'DoF', {});
+
+% --- Loop over metrics and regions ---
+for m = 1:length(metrics)
+    metric = metrics{m};
+    label = metricLabels{m};
+   
+    for r = 1:length(regions)
+        region = regions{r};
+        subdata = data(strcmp(data.Region, region), :);
+       
+% --- Fit regression ---
+        mdl = fitlm(subdata, sprintf('mean_SUVR ~ %s + QRISK_mean_BP', metric));
+       
+% --- Extract coefficient + stats ---
+        coeff = mdl.Coefficients.Estimate(2);
+        CI = coefCI(mdl); % 95% CI
+        ci_lower = CI(2,1);
+        ci_upper = CI(2,2);
+        pval = mdl.Coefficients.pValue(2);
+        adjR2 = mdl.Rsquared.Adjusted;
+        dof = mdl.DFE;
+
+% ---- Add to cells ---
+        results(end+1) = struct( ...
+            'Region', region, ...
+            'Metric', label, ...
+            'Beta', coeff, ...
+            'CI_Lower', ci_lower, ...
+            'CI_Upper', ci_upper, ...
+            'pValue', pval, ...
+            'Adjusted_R2', adjR2, ...
+            'DoF', dof ...
+        );
+    end
+end
+
+%  --- Convert ---
+resultTable = struct2table(results);
+
+% --- Write Excel ---
+writetable(resultTable, 'Q2regression_Qrisk.xlsx');
+disp('Saved: Q2regression_Qrisk.xlsx');
