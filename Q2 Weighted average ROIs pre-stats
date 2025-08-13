@@ -1,4 +1,4 @@
-% SUMMARY
+% SUMMARY - MATLAB
 %   Compute voxel-count–weighted averages of PET/ASL metrics per subject (ID) and region,
 %   for Q2 regression and outputs table ID, Age, Amyloid_Status, Region, Weighted metrics
 %   and Voxel_Count_Total
