@@ -1,0 +1,62 @@
+% SUMMARY
+%   Compute voxel-count–weighted averages of PET/ASL metrics per subject (ID) and region,
+%   for Q2 regression and outputs table ID, Age, Amyloid_Status, Region, Weighted metrics
+%   and Voxel_Count_Total
+%  
+%   Metrics: Amyloid_Mean, Perfusion_Mean/Median, Arrival_Mean/Median, mean_SUVR
+%
+%   - Group by (ID, Region).
+%   - Compute weighted means for the listed metrics using Voxel_Count as weights
+%   - Calculate total Voxel_Count per (ID, Region) for QC.
+
+
+clear all;
+close all;
+clc;
+
+basedir  = 'D:\Yasmin_Liz\Needed';
+datafile = fullfile(basedir, 'Stats_wholecereb2.xlsx');
+data     = readtable(datafile, 'ReadVariableNames', true, 'VariableNamingRule','preserve');
+
+outputFile = fullfile(basedir, 'averaged_by_region_weighted.xlsx');
+
+% --- Metrics you want weighted by voxel contribution ---
+metricsWeighted = {'Amyloid_Mean','Perfusion_Mean','Perfusion_Median', ...
+                   'Arrival_Mean','Arrival_Median','mean_SUVR'};
+
+% --- Grouping identity ---
+[groupID, idVals, regionVals] = findgroups(data.ID, data.Region);
+
+% --- Weighted mean (ignores NaNs) ---
+wmean = @(x,w) sum(x.*w,'omitnan') ./ sum(w,'omitnan');
+
+% --- Preallocate output table with identity ---
+out = table;
+out.ID     = splitapply(@(x) x(1), data.ID,     groupID);
+out.Region = splitapply(@(x) x(1), data.Region, groupID);
+
+% --- Compute weighted means for each metric ---
+for k = 1:numel(metricsWeighted)
+    varname = metricsWeighted{k};
+    if ismember(varname, data.Properties.VariableNames)
+        out.(varname) = splitapply(wmean, data.(varname), data.Voxel_Count, groupID);
+    end
+end
+
+% --- Constants per ID (Age/Amyloid_Status) ---
+% --- Assumes these are constant across regions/runs ---
+constVars = {'Age','Amyloid_Status'};
+haveConst = ismember(constVars, data.Properties.VariableNames);
+if any(haveConst)
+    constTbl = unique(data(:, ['ID', constVars(haveConst)]), 'rows', 'stable');
+    out = outerjoin(out, constTbl, 'Keys','ID','MergeKeys',true);
+    out = movevars(out, constVars(haveConst), 'After', 'ID');
+end
+
+% --- New Voxel_Count total per ID–Region ---
+out.Voxel_Count_Total = splitapply(@(w) sum(w,'omitnan'), data.Voxel_Count, groupID);
+out = movevars(out, 'Region', 'After', 'Amyloid_Status');
+
+% --- Save output ---
+writetable(out, outputFile);
+disp(['Weighted averages saved to: ' outputFile]);
