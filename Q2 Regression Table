@@ -1,0 +1,67 @@
+% SUMMARY
+%   For each ROI, model the relationship between PET SUVR and a chosen ASL metric (CBF or ATT),
+%   and produce region-wise excel table
+%
+%   Input: Excel with ps as rows
+%
+%   Loop over metrics {Perfusion_Median→"CBF", Arrival_Median→"ATT"} and over regions.
+%   fit linear model: Mean_SUVR ~ <metric> + *Any covariates here*
+%   Computes β, p-value, adjusted R², and dof 
+
+clear all;
+close all;
+clc;
+
+basedir = 'D:\Yasmin_Liz\Needed'
+% Load data
+datafile = fullfile(basedir, 'averaged_by_region_weighted.xlsx')
+data = readtable('averaged_by_region_weighted.xlsx');
+
+regions = unique(data.Region);
+metrics = {'Perfusion_Median', 'Arrival_Median'};
+metricLabels = {'CBF', 'ATT'};
+
+% Preallocate output
+results = struct('Region', {}, 'Metric', {}, 'Beta', {}, 'CI_Lower', {}, 'CI_Upper', {}, 'pValue', {}, 'Adjusted_R2', {}, 'DoF', {});
+
+% Loop over metrics and regions
+for m = 1:length(metrics)
+    metric = metrics{m};
+    label = metricLabels{m};
+   
+    for r = 1:length(regions)
+        region = regions{r};
+        subdata = data(strcmp(data.Region, region), :);
+       
+        % Fit regression
+        mdl = fitlm(subdata, sprintf('mean_SUVR ~ %s', metric));
+       
+        % Extract coefficient + stats
+        coeff = mdl.Coefficients.Estimate(2);
+        CI = coefCI(mdl); % 95% CI
+        ci_lower = CI(2,1);
+        ci_upper = CI(2,2);
+        pval = mdl.Coefficients.pValue(2);
+        adjR2 = mdl.Rsquared.Adjusted;
+        dof = mdl.DFE;
+
+        % Add to struct
+        results(end+1) = struct( ...
+            'Region', region, ...
+            'Metric', label, ...
+            'Beta', coeff, ...
+            'CI_Lower', ci_lower, ...
+            'CI_Upper', ci_upper, ...
+            'pValue', pval, ...
+            'Adjusted_R2', adjR2, ...
+            'DoF', dof ...
+        );
+    end
+end
+
+% Convert to table
+resultTable = struct2table(results);
+
+% Write to Excel
+writetable(resultTable, 'Q2regression_unadj_weighted.xlsx');
+disp('Saved: Q2regression_weighted.xlsx');
