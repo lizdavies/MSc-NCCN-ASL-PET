@@ -1,4 +1,4 @@
-% SUMMARY
+% - MATLAB
 %   Test whether the SUVR–ASL (CBF/ATT) relationship varies with vascular risk (QRISK) per region.
 %   Adapted from Q2 Regression QRisk covar + Q2 Regression Interactions 
 %    Separate code as it has to read in from another table and i did not want to edit my old code and do it wrong
