@@ -1,0 +1,144 @@
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Writes Excel file calculating composite SUVRs
+% 
+% Reads patients demographics file for age, amyloid status and ID matching
+% Reads raw PET images
+% Uses Freesurfer atlas for ROI definition (matching with index and inclusion/exclusion group
+% Calculates Regional Mean Cerebellar Normalised PET values
+% Requires SPM12
+% THIS NEEDS TO BE WEIGHTED
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+clear all;
+close all;
+clc;
+
+basedir = 'D:\Yasmin_Liz\DATA'
+table_file   = fullfile(basedir, 'FreeSurfer_LD_YT.xlsx');
+demo_file = fullfile(basedir, 'Demographics.xlsx');
+out_excel = fullfile(basedir, 'PVCcomposite_cerebellum.xlsx')
+
+% --- Load the FreeSurfer ROI info ---
+roi_table = readtable(table_file, 'VariableNamingRule', 'preserve');
+roi_indices   = roi_table.index;
+roi_labels    = roi_table.('structure/region name');
+roi_inclusion = roi_table.('Inclusion/Exclusion');
+
+% --- Define target cerebellar ROI names ---
+cerebL1_index = 8;
+cerebL2_index = 7;
+cerebR1_index = 47;
+cerebR2_index = 46;
+
+include_mask = strcmpi(strtrim(roi_inclusion), 'Inclusion');
+included_indices = roi_indices(include_mask);
+
+% --- Read the demographics Excel table ---
+ demo_tbl = readtable(demo_file, 'ReadVariableNames', true, 'VariableNamingRule','preserve');
+ demo_tbl.Properties.VariableNames = matlab.lang.makeValidName(demo_tbl.Properties.VariableNames);
+ disp(demo_tbl.Properties.VariableNames);
+if isnumeric(demo_tbl.ID);
+    demo_tbl.ID = compose('%03d', demo_tbl.ID);
+end
+demo_IDs = string(demo_tbl.ID);
+demo_ages = demo_tbl.Age_yrs_;
+demo_amy_status = string(demo_tbl.Amyloid); %%%%% NEW
+
+% --- Find subject folder ---
+subject_dirs = dir(fullfile(basedir, '*_V1*'));
+nSubs = numel(subject_dirs);
+summary_data = {};
+
+for idx = 1:nSubs 
+% --- Define paths ---
+    subj_folder = subject_dirs(idx).name;
+    subj_dir = fullfile(basedir, subj_folder);
+    subj_id = extractBefore(subj_folder, '_V1');
+
+    fprintf('\nProcessing subject %s...\n', subj_id);
+
+    atlas_file = dir(fullfile(subj_dir, 'aparc.DKTatlas+aseg-in-rawavg_mgz2nii.nii'));
+    atlas_vol  = spm_vol(fullfile(subj_dir, atlas_file(1).name));
+    atlas_img  = spm_read_vols(atlas_vol);
+
+    amy_file   = dir(fullfile(subj_dir, 'rPET_Ave_flipped.nii'));
+        if isempty(amy_file)
+           fprintf('No amyloid image found for %s - skipped.\n', subj_folder);
+           continue;
+        else 
+        amy_vol    = spm_vol(fullfile(subj_dir, 'rPET_Ave_flipped.nii'));
+        amy_img    = spm_read_vols(amy_vol);
+        end
+
+% --- Prepare per-subject storage ---
+    roi_means = zeros(size(included_indices));      % Preallocate with zeros
+    roi_voxcount = zeros(size(included_indices));   % For optional QC
+    
+    for r = 1:length(included_indices)
+        roi_idx = included_indices(r);
+    
+        % --- Find mask for this ROI in atlas ---
+        roi_mask = (atlas_img == roi_idx);
+    
+        % --- Sanity check: mask must not be empty ---
+        if ~any(roi_mask(:))
+            error('ROI index %d not found in atlas for subject %s', roi_idx, subj_id);
+        end
+    
+        % --- Extract PET values in ROI mask ---
+        roi_values = amy_img(roi_mask);
+    
+        % --- Check for unexpected NaNs in PET image values ---
+        if any(isnan(roi_values))
+            error('NaN detected in PET values for ROI index %d in subject %s', roi_idx, subj_id);
+        end
+    
+        % --- Compute and store values ---
+        roi_means(r) = mean(roi_values);
+        roi_voxcount(r) = nnz(roi_mask);
+    end
+
+% --- Calculate mean amyloid in cerebellum ---
+    cerebL1_mask = (atlas_img == cerebL1_index);
+    cerebL2_mask = (atlas_img == cerebL2_index);
+    cerebR1_mask = (atlas_img == cerebR1_index);
+    cerebR2_mask = (atlas_img == cerebR2_index);
+    if ~any(cerebL1_mask(:)) || ~any(cerebR1_mask(:))
+        error('Cerebellum ROI (%d) not found for subject %s', cerebL1_index, subj_id);
+    end
+
+    cerebL1_values = amy_img(cerebL1_mask);
+    cerebL2_values = amy_img(cerebL2_mask);
+    cerebR1_values = amy_img(cerebR1_mask);
+    cerebR2_values = amy_img(cerebR2_mask);
+
+    if any(isnan(cerebL1_values)) || any(isnan(cerebR1_values))
+        error('NaN detected in PET values for cerebellum in subject %s', subj_id);
+    end
+    
+    cerebL1_mean = mean(cerebL1_values);
+    cerebL2_mean = mean(cerebL2_values);
+    cerebR1_mean = mean(cerebR1_values);
+    cerebR2_mean = mean(cerebR2_values);
+    cereb_mean = mean([cerebL1_mean, cerebR1_mean, cerebL2_mean, cerebR2_mean]);
+
+    roi_suvr = roi_means / cereb_mean;
+    composite_suvr = mean(roi_suvr);
+
+    fprintf('Subject %s: Cerebellum mean - %.4f |Composite SUVR = %.4f\n', subj_id, cereb_mean, composite_suvr);
+    
+    match_idx = find(demo_IDs == subj_id);
+    age = demo_ages(match_idx);
+    amy_status = demo_amy_status(match_idx); %%%%%%% NEW LINE
+    summary_data(end+1,:) = {subj_id,  age, amy_status, composite_suvr}; %%%%%%%% ALSO CHANGED
+    fprintf('Done %s: SUVR = %.3f\n', subj_id, composite_suvr);
+
+end
+
+% --- Final table ---
+summary_tbl = cell2table(summary_data, 'VariableNames', {'ID', 'Age', 'Amyloid Status', 'Composite_SUVR'});
+summary_tbl = sortrows(summary_tbl, 'Composite_SUVR', 'descend');
+writetable(summary_tbl, out_excel);
+
+fprintf('Saved composite SUVR table to %s\n', out_excel);
+
