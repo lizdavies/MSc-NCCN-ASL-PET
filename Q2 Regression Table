@@ -7,13 +7,14 @@
 %   Loop over metrics {Perfusion_Median→"CBF", Arrival_Median→"ATT"} and over regions.
 %   fit linear model: Mean_SUVR ~ <metric> + *Any covariates here*
 %   Computes β, p-value, adjusted R², and dof 
+%
 
 clear all;
 close all;
 clc;
 
 basedir = 'D:\Yasmin_Liz\Needed'
-% Load data
+% --- Load data ---
 datafile = fullfile(basedir, 'averaged_by_region_weighted.xlsx')
 data = readtable('averaged_by_region_weighted.xlsx');
 
@@ -21,10 +22,10 @@ regions = unique(data.Region);
 metrics = {'Perfusion_Median', 'Arrival_Median'};
 metricLabels = {'CBF', 'ATT'};
 
-% Preallocate output
+% --- Preallocate output ---
 results = struct('Region', {}, 'Metric', {}, 'Beta', {}, 'CI_Lower', {}, 'CI_Upper', {}, 'pValue', {}, 'Adjusted_R2', {}, 'DoF', {});
 
-% Loop over metrics and regions
+% --- Loop over metrics and regions ---
 for m = 1:length(metrics)
     metric = metrics{m};
     label = metricLabels{m};
@@ -33,10 +34,10 @@ for m = 1:length(metrics)
         region = regions{r};
         subdata = data(strcmp(data.Region, region), :);
        
-        % Fit regression
+% --- Fit regression ---
         mdl = fitlm(subdata, sprintf('mean_SUVR ~ %s', metric));
        
-        % Extract coefficient + stats
+% --- Extract coefficient + stats ---
         coeff = mdl.Coefficients.Estimate(2);
         CI = coefCI(mdl); % 95% CI
         ci_lower = CI(2,1);
@@ -45,7 +46,7 @@ for m = 1:length(metrics)
         adjR2 = mdl.Rsquared.Adjusted;
         dof = mdl.DFE;
 
-        % Add to struct
+% --- Add to struct ---
         results(end+1) = struct( ...
             'Region', region, ...
             'Metric', label, ...
@@ -59,9 +60,9 @@ for m = 1:length(metrics)
     end
 end
 
-% Convert to table
+% ---- Convert ---
 resultTable = struct2table(results);
 
-% Write to Excel
+% --- Write Excel ---
 writetable(resultTable, 'Q2regression_unadj_weighted.xlsx');
 disp('Saved: Q2regression_weighted.xlsx');
