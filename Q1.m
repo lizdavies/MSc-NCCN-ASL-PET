@@ -1,4 +1,5 @@
-% This script loads regional PET SUVR data from a specified Excel file and 
+% - MATLAB
+% script loads regional PET SUVR data from a specified Excel file and 
 % performs region-wise statistical analysis. For each ROI, it fits a linear 
 % regression model to assess the relationship between amyloid status and SUVR, 
 % extracting beta coefficients, confidence intervals, p-values, and model fit 
@@ -53,3 +54,4 @@ results = struct('Region', {}, 'pValue', {}, 't_stat', {}, 'CI_Lower', {}, 'CI_U
         );
 
     end
+
