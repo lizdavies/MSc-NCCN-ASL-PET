@@ -61,7 +61,7 @@ for m = 1:length(metrics)
         adjR2 = mdl.Rsquared.Adjusted;
         dof = mdl.DFE;
 
-% ---- Add to cells ---
+% --- Add to cells ---
         results(end+1) = struct( ...
             'Region', region, ...
             'Metric', label, ...
@@ -75,7 +75,7 @@ for m = 1:length(metrics)
     end
 end
 
-%  --- Convert ---
+% ---- Convert ---
 resultTable = struct2table(results);
 
 % --- Write Excel ---
