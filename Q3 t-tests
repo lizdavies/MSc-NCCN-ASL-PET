@@ -1,7 +1,7 @@
-% SUMMARY
+% SUMMARY - MATLAB
 % Reads an Excel workbook where each sheet corresponds to an anatomical region.
 % Inputs:
-%   - datafile: 'All_Subjects_ROI_Summary_Wholecereb.xlsx' (my mass summary stat or composite summary stat table)
+%   - datafile: *my mass summary stat or composite summary stat table*
 %   - Required columns in each sheet:
 %       * metric (set by `metric`, e.g., 'Voxel count' or a SUVR/CBF/ATT column)
 %       * groupVar (set by 'Amyloid Status', with 'Y' and 'N')
@@ -14,7 +14,6 @@
 %   - Table with columns: Anatomical_Region, Pos, Neg, Percent_Difference,
 %     t_statistic, p_value, DoF.
 %   - Saves results to 'Q1or3_*metric*.xlsx' *metric* i manually changed 
-
 
 clear all;
 close all;
