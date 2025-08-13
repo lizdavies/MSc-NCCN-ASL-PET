@@ -1,0 +1,57 @@
+% SUMMARY
+% Coregister each subject’s PET to their T1 using SPM (estimate+write), then reslice PET.
+% Needs SPM
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+basedir = 'D:\Yasmin_Liz\DATA';
+participants = dir(fullfile(basedir, '047_V1*'));  % List all entries
+participants = participants([participants.isdir]);  % Keep only folders
+
+spm('defaults', 'fmri');
+spm_jobman('initcfg')
+
+for i = 1:1:length(participants)
+    sub_name = participants(i).name;
+    sub_path = fullfile(basedir, sub_name);
+
+    t1_file = dir(fullfile(sub_path, '*_T1w.nii'));
+    if isempty(t1_file)
+        fprintf('T1 not found for %s\n', sub_name);
+    end
+      
+    t1_path = fullfile(sub_path, t1_file(1).name);
+
+    pet_path = fullfile(sub_path, 'PET_Ave_flipped.nii');
+    if ~isfile(pet_path)
+        fprintf('PET not found for %s\n', sub_name);
+        continue;
+    end
+     
+    matlabbatch = [];
+
+    matlabbatch{1}.spm.spatial.coreg.estwrite.ref = {[t1_path ',1']};
+    matlabbatch{1}.spm.spatial.coreg.estwrite.source = {[pet_path ',1']};
+    matlabbatch{1}.spm.spatial.coreg.estwrite.other = {''};
+    matlabbatch{1}.spm.spatial.coreg.estwrite.eoptions.cost_fun = 'nmi';
+    matlabbatch{1}.spm.spatial.coreg.estwrite.eoptions.sep = [4 2];
+    matlabbatch{1}.spm.spatial.coreg.estwrite.eoptions.tol = ...
+        [0.0200 0.0200 0.0200 0.0010 0.0010 0.0010 0.0100 0.0100 0.0100 0.0010 0.0010 0.0010];
+    matlabbatch{1}.spm.spatial.coreg.estimate.eoptions.fwhm = [7 7];
+    matlabbatch{1}.spm.spatial.coreg.estwrite.roptions.interp = 4;      % 4 = 4th-degree B-spline
+    matlabbatch{1}.spm.spatial.coreg.estwrite.roptions.wrap = [0 0 0];
+    matlabbatch{1}.spm.spatial.coreg.estwrite.roptions.mask = 0;
+    matlabbatch{1}.spm.spatial.coreg.estwrite.roptions.prefix = 'r';    % Output = rPET_Ave_flipped.nii
+
+    fprintf('Running coregistration for %s...\n', sub_name)
+    spm_jobman('run', matlabbatch);
+end
+
+
+
+
+
+
+
+
+
+
