@@ -1,0 +1,11 @@
+%
+% PVC Cohen'd D
+% Assigned group vectors B1 and B2
+%
+
+function d = computeCohensD(B1, B2)
+n1 = length(B1);
+n2 = length(B2);
+pooled_std = sqrt(((n1 - 1)*var(B1) + (n2 - 1)*var(B2)) /(n1 + n2 - 2));
+d=(mean(B1) - mean (B2)) / pooled_std;
+end
