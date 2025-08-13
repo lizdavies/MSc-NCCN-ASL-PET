@@ -1,6 +1,7 @@
 % SUMMARY
 %   Test whether the SUVR–ASL (CBF/ATT) relationship varies with vascular risk (QRISK) per region.
-%   Separate code as it has to read in from another table and i did not want to edit my old code and do it wrong
+%   Adapted from Q2 Regression interaction 
+%    Separate code as it has to read in from another table and i did not want to edit my old code and do it wrong
 % 
 %   ID, Region, mean_SUVR, Perfusion_Median, Arrival_Median, Age
 %   Demo excel --> ID, QRISK_mean_BP
