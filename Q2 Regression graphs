@@ -1,0 +1,82 @@
+% SUMMARY
+%   For each ROI, model the relationship between PET SUVR and a chosen ASL metric (CBF or ATT),
+%   and produce region-wise scatter plots with linear fit and 95% CI, stratified by amyloid status.
+%
+%   Input: Excel with ps as rows
+%
+%   Loop over metrics {Perfusion_Median→"CBF", Arrival_Median→"ATT"} and over regions.
+%   fit linear model: Mean_SUVR ~ <metric> + *Any covariates here*
+%   Computes β, p-value, adjusted R², and dof 
+%   Generate scatter by amyloid status (Y/N).
+%   Plot regression line with 95% CI 
+
+clear all;
+close all;
+clc;
+
+basedir = 'D:\Yasmin_Liz\DATA\Cerebellum_No_Cun_or_medial_temp\Stats_output'
+% Load data
+datafile = fullfile(basedir, 'Stats_wholecereb.xlsx')
+data = readtable('Stats_wholecereb.xlsx');
+
+regions = unique(data.Region);
+colours = struct('CBF', [0, 0.6, 0], 'ATT', [0, 0.4, 1]); % green and blue
+
+metrics = {'Perfusion_Median', 'Arrival_Median'};
+metricLabels = {'CBF', 'ATT'};
+
+for m = 1:length(metrics)
+    metric = metrics{m};
+    label = metricLabels{m};
+   
+    for r = 1:length(regions)
+        region = regions{r};
+        subdata = data(strcmp(string(data.Region), region), :);
+
+        % Linear model: SUVR ~ Metric + Age + Voxel_Count
+        mdl = fitlm(subdata, sprintf('Mean_SUVR ~ %s', metric));
+
+        coeff = mdl.Coefficients.Estimate(2); % 2nd row = CBF or ATT
+        pval = mdl.Coefficients.pValue(2);
+        adjR2 = mdl.Rsquared.Adjusted;
+        dof = mdl.DFE;
+
+        % Scatter plot
+        figure('Name', sprintf('%s - %s', region, label), 'Color', 'w');
+        hold on;
+
+        isPositive = strcmp(string(subdata.Amyloid_Status), 'Y');
+       
+        scatter(subdata{isPositive, metric}, subdata{isPositive, 'Mean_SUVR'}, 50, ...
+            'V', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceColor', colours.(label));
+        scatter(subdata{~isPositive, metric}, subdata{~isPositive, 'Mean_SUVR'}, 25, ...
+            'o', 'filled', 'MarkerEdgeColor', 'k', 'MarkerFaceColor', colours.(label));
+
+        % Prediction and confidence intervals
+        xvals = linspace(min(subdata{:, metric}), max(subdata{:, metric}), 100)';
+        preddata = table(xvals, ...
+            repmat(mean(subdata.Age), 100, 1), ...
+            repmat(mean(subdata.Voxel_Count), 100, 1), ...
+            'VariableNames', {metric, 'Age', 'Voxel_Count'});
+       
+        [ypred, yci] = predict(mdl, preddata);
+
+        % Shaded confidence interval
+        fill([xvals; flipud(xvals)], [yci(:,1); flipud(yci(:,2))], ...
+            colours.(label), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+
+        % Regression line
+        plot(xvals, ypred, '-', 'Color', colours.(label), 'LineWidth', 2);
+
+        % Annotate
+        if strcmp(label, 'CBF')
+            xlabel('CBF (mL/100g/min)')
+        elseif strcmp(label, 'ATT')
+            xlabel('ATT (s)')
+        end
+        ylabel('Mean SUVR (Aβ PET)');
+        title(sprintf('%s \nβ = %.2f, Adj. R^2 = %.2f, dof = %d, pval = %.4f', region, coeff, adjR2, dof, pval));
+        legend('Amyloid Positive', 'Amyloid Negative', '95% CI', 'Regression Line', 'Location', 'best');
+        grid on;
+        hold off;
+    end
