@@ -5,6 +5,7 @@
 % Uses FreeSurfer atlas for ROI definition
 % Calculates regional PET means, a voxel-count–weighted cerebellar mean,
 % and a voxel-count–weighted target composite mean, then outputs Composite SUVR
+% Used for manual Welches t-test performed in MATLAB
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear all;
@@ -165,3 +166,4 @@ summary_tbl = sortrows(summary_tbl, 'Composite_SUVR', 'descend');
 writetable(summary_tbl, out_excel);
 
 fprintf('Saved composite SUVR table to %s\n', out_excel);
+
