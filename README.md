@@ -35,4 +35,5 @@ Welch’s t-tests (Y vs N).
 Linear regressions: unadjusted, covariates, and interactions with Amyloid status or QRISK.
 Region-wise scatter plots (SUVR vs ASL metric) with regression line and 95% CI.
 
-Note: OLD files included as analysis pipeline developed differently demanding different outputs and processing/data handling requirements
+Note: OLD scripts included as analysis pipeline developed differently demanding different outputs and processing/data handling requirements
+X Script is the work from my project partner and is included for completeness
