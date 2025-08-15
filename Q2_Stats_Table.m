@@ -1,3 +1,14 @@
+% SUMMARY - MATLAB
+%   For each ROI, model the relationship between PET SUVR and a chosen ASL metric (CBF or ATT),
+%   and produce region-wise excel table
+%
+%   Input: Excel with ps as rows
+%
+%   Loop over metrics {Perfusion_Median→"CBF", Arrival_Median→"ATT"} and over regions.
+%   fit linear model: Mean_SUVR ~ <metric> + *Any covariates here*
+%   Computes β, p-value, adjusted R², and dof 
+%
+
 clear all;
 close all;
 clc;
@@ -105,3 +116,4 @@ resultTable = struct2table(results);
 % Write to Excel
 writetable(resultTable, '1Q2Rregression_covar_Tracer.xlsx');
 disp('Saved: 1Q2Rregression_covar_Tracer.xlsx');
+
