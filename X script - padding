@@ -1,0 +1,68 @@
+PADDING TO T1
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Pads ASL (CBF + ATT) images to match T1 dimensions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+clear all; close all; clc;
+% --------- Set Base Path ---------
+base_path = 'C:\Users\yasmi\Downloads\Laura_Parkes_Hard_Drive\Yasmin_Liz\DATA';
+subject_dirs = dir(fullfile(base_path, '*_V1*'));
+for s = 1:length(subject_dirs)
+subj_id = subject_dirs(s).name;
+asl_dir = fullfile(base_path, subj_id, 'copy2', 'Basil_output', 'struct_space');
+if ~exist(asl_dir, 'dir')
+fprintf('Skipping %s (no ASL folder found)\n', subj_id);
+continue;
+end
+cd(asl_dir);
+try
+% --------- Load Files ---------
+cbf_nii = load_nii('perfusion_calib.nii');
+att_nii = load_nii('arrival.nii');
+T1w_nii = load_nii('T1w.nii');
+cbf = double(cbf_nii.img);
+att = double(att_nii.img);
+T1w = double(T1w_nii.img);
+% --------- Calculate Padding Parameters ---------
+z_cbf = size(cbf,3);
+z_att = size(att,3);
+z_T1w = size(T1w,3);
+% CBF
+pad_diff_cbf = z_T1w - z_cbf;
+pad_pre_cbf = round(T1w_nii.hdr.hist.qoffset_z - cbf_nii.hdr.hist.qoffset_z);
+pad_post_cbf = pad_diff_cbf - pad_pre_cbf;
+% ATT
+pad_diff_att = z_T1w - z_att;
+pad_pre_att = round(T1w_nii.hdr.hist.qoffset_z - att_nii.hdr.hist.qoffset_z);
+pad_post_att = pad_diff_att - pad_pre_att;
+% --------- Apply Padding ---------
+cbf_pad = padarray(cbf, [0 0 max(pad_pre_cbf,0)], 0, 'pre');
+cbf_pad = padarray(cbf_pad, [0 0 max(pad_post_cbf,0)], 0, 'post');
+att_pad = padarray(att, [0 0 max(pad_pre_att,0)], 0, 'pre');
+att_pad = padarray(att_pad, [0 0 max(pad_post_att,0)], 0, 'post');
+% Optional: force cropping if padding overshoots
+% if size(cbf_pad,3) > z_T1w
+% cbf_pad = cbf_pad(:,:,1:z_T1w);
+%end
+%if size(att_pad,3) > z_T1w
+% att_pad = att_pad(:,:,1:z_T1w);
+%end
+% --------- Update Headers ---------
+cbf_nii.img = cbf_pad;
+cbf_nii.hdr.dime.dim(2:4) = size(cbf_pad);
+cbf_nii.hdr.hist.qoffset_z = T1w_nii.hdr.hist.qoffset_z;
+att_nii.img = att_pad;
+att_nii.hdr.dime.dim(2:4) = size(att_pad);
+att_nii.hdr.hist.qoffset_z = T1w_nii.hdr.hist.qoffset_z;
+% --------- Save Output ---------
+output_dir = fullfile(asl_dir, 'ASL_padded_to_T1');
+if ~exist(output_dir, 'dir')
+mkdir(output_dir);
+end
+save_nii(cbf_nii, fullfile(output_dir, 'perfusion_calib_padded_to_T1.nii'));
+save_nii(att_nii, fullfile(output_dir, 'arrival_padded_to_T1.nii'));
+fprintf('%s done\n', subj_id);
+catch
+fprintf('Error in %s, skipping\n', subj_id);
+continue;
+end
+end
