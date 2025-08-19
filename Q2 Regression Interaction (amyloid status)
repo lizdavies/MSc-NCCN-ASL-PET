@@ -1,0 +1,175 @@
+clear; close all; clc;
+
+basedir = 'D:\Yasmin_Liz\Needed\Correct';
+datafile = fullfile(basedir, '1Raw_Roi_Table.xlsx');
+outfile = fullfile(basedir, '1Q2regression_interaction.xlsx');
+
+sheetNames = sheetnames(datafile);
+
+allData = table();
+for k = 1:numel(sheetNames)
+    T = readtable(datafile, 'Sheet', sheetNames{k}, 'VariableNamingRule','preserve');
+
+    % Add Region column if missing
+    if ~ismember('Region', T.Properties.VariableNames)
+        T.Region = repmat(string(sheetNames{k}), height(T), 1);
+    end
+
+    allData = [allData; T]; 
+end
+
+% Now assign to data for consistency
+data = allData;
+
+% Ensure expected variable names exist
+reqVars = {'Region','mean_SUVR','Perfusion_Mean','Arrival_Mean','Amyloid_Status','Age','VoxelCount_T1'};
+missing = setdiff(reqVars, data.Properties.VariableNames);
+
+if ismember('Amyloid Status', data.Properties.VariableNames)
+    data.Properties.VariableNames{strcmp(data.Properties.VariableNames,'Amyloid Status')} = 'Amyloid_Status';
+end
+
+% Make group categorical and set reference to 'Negative' when present
+data.Amyloid_Status = categorical(string(data.Amyloid_Status));
+if any(data.Amyloid_Status == "N")
+    data.Amyloid_Status = reordercats(data.Amyloid_Status, ["N", setdiff(categories(data.Amyloid_Status),"N")]);
+end
+
+regions      = unique(data.Region);
+metrics      = {'Perfusion_Mean','Arrival_Mean'};
+metricLabels = {'CBF','ATT'};
+
+% Collect results in a struct array to avoid table-padding warnings
+results = struct('Region',{},'Metric',{}, ...
+    'Beta_Pooled',{},'CI_Pooled_L',{},'CI_Pooled_U',{},'p_Pooled',{}, ...
+    'Beta_Neg',{},'CI_Neg_L',{},'CI_Neg_U',{},'p_Neg',{}, ...
+    'Beta_Pos',{},'CI_Pos_L',{},'CI_Pos_U',{},'p_Pos',{}, ...
+    'Beta_Interaction',{},'p_Interaction',{}, ...
+    'Adj_R2',{},'DoF',{});
+
+for m = 1:numel(metrics)
+    metric = metrics{m};
+    label  = metricLabels{m};
+
+    for r = 1:numel(regions)
+        region = regions{r};
+        sub = data(strcmp(data.Region, region), :);
+
+        % Drop rows with missing key vars
+        sub = rmmissing(sub(:, {'ROI_SUVR', metric, 'Amyloid_Status', 'Age', 'VoxelCount_T1'}));
+        if height(sub) < 6
+            % too few data points to fit reliably
+            continue;
+        end
+
+        % Fit interaction model with covariates
+        form = sprintf('ROI_SUVR ~ %s * Amyloid_Status', metric);
+        mdl  = fitlm(sub, form);
+
+        % Coefficient table & covariance
+        coefTbl = mdl.Coefficients;
+        covB    = mdl.CoefficientCovariance;
+        df      = mdl.DFE;
+
+        % Identify row indices safely
+        % Main effect row for metric (e.g., 'Perfusion_Median')
+        iMetric = find(strcmp(coefTbl.Properties.RowNames, metric));
+        % Interaction row name depends on category label; build it
+        cats = categories(sub.Amyloid_Status);
+        % Using reference 'Negative' => interaction row with the *non-reference* level:
+        if numel(cats) >= 2
+            posLevel = cats{2}; % e.g., 'Positive' if order is ['Negative','Positive']
+        else
+            % Fallback: if only one level present, interaction doesn't exist
+            posLevel = '';
+        end
+        interName = sprintf('%s:Amyloid_Status_%s', metric, posLevel);
+        iInter = find(strcmp(coefTbl.Properties.RowNames, interName));
+
+        % If rows missing, skip gracefully
+        if isempty(iMetric)
+            continue;
+        end
+
+        % ----- Pooled slope (metric main effect) -----
+        beta_pool = coefTbl.Estimate(iMetric);
+        p_pool    = coefTbl.pValue(iMetric);
+        CI_all    = coefCI(mdl);  % 95% CI for all coefficients
+        CI_pool   = CI_all(iMetric, :);
+
+        % ----- Interaction (difference in slopes) -----
+        if ~isempty(iInter)
+            beta_int = coefTbl.Estimate(iInter);
+            p_int    = coefTbl.pValue(iInter);
+        else
+            beta_int = NaN; p_int = NaN;
+        end
+
+        % ----- Group-specific slopes -----
+        % Negative group slope = main effect of metric (reference group)
+        beta_neg = beta_pool;
+        % Positive group slope = main effect + interaction
+        beta_pos = beta_pool + beta_int;
+
+        % p-value for Negative slope is same as main-effect p
+        p_neg = p_pool;
+
+        % p-value for Positive slope: test H0: (metric + interaction) = 0
+        % Build contrast vector c'*beta
+        p_pos = NaN;
+        if ~isempty(iInter)
+            c = zeros(1, height(coefTbl));
+            c(iMetric) = 1;
+            c(iInter)  = 1;
+            % coefTest returns F-stat for 1-df test; get p from that
+            F = coefTest(mdl, c);
+            p_pos = fcdf(F, 1, df, 'upper'); % right-tail p-value
+        end
+
+        % 95% CI for Negative slope is CI of main effect
+        CI_neg = CI_pool;
+
+        % 95% CI for Positive slope via delta method:
+        CI_pos = [NaN NaN];
+        if ~isempty(iInter)
+            % var(a+b) = var(a)+var(b)+2*cov(a,b)
+            var_pos = covB(iMetric,iMetric) + covB(iInter,iInter) + 2*covB(iMetric,iInter);
+            se_pos  = sqrt(var_pos);
+            tcrit   = tinv(0.975, df);
+            CI_pos  = [beta_pos - tcrit*se_pos, beta_pos + tcrit*se_pos];
+        end
+
+        % Store
+        results(end+1) = struct( ...
+            'Region',          string(region), ...
+            'Metric',          string(label), ...
+            'Beta_Pooled',     beta_pool, ...
+            'CI_Pooled_L',     CI_pool(1), ...
+            'CI_Pooled_U',     CI_pool(2), ...
+            'p_Pooled',        p_pool, ...
+            'Beta_Neg',        beta_neg, ...
+            'CI_Neg_L',        CI_neg(1), ...
+            'CI_Neg_U',        CI_neg(2), ...
+            'p_Neg',           p_neg, ...
+            'Beta_Pos',        beta_pos, ...
+            'CI_Pos_L',        CI_pos(1), ...
+            'CI_Pos_U',        CI_pos(2), ...
+            'p_Pos',           p_pos, ...
+            'Beta_Interaction',beta_int, ...
+            'p_Interaction',   p_int, ...
+            'Adj_R2',          mdl.Rsquared.Adjusted, ...
+            'DoF',             df ...
+        );
+    end
+end
+
+% Convert to table and write
+if isempty(results)
+    warning('No results produced (check data filtering).');
+else
+    T = struct2table(results);
+    % Optional: sort by Region then Metric
+    T = sortrows(T, {'Region','Metric'});
+    writetable(T, outfile);
+    fprintf('Saved: %s\n', outfile);
+end
